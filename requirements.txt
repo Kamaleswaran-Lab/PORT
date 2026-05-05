@@ -1,0 +1,42 @@
+# PORT (CHDLLM) — Python dependencies for the paper
+# Tested with Python 3.12 on Duke DCC H200/A100 cluster.
+#
+# Note: ethos-ares is installed separately via:
+#   git clone https://github.com/ipolharvard/ethos-ares.git
+#   pip install -e ethos-ares/
+# ETHOS pulls in MEDS-Transforms, polars, hydra-core, omegaconf, and safetensors
+# transitively; only the additional dependencies are listed below.
+
+# ── Core scientific stack ────────────────────────────────────────────────────
+numpy>=1.26
+pandas>=2.2
+pyarrow>=14
+scipy>=1.13
+scikit-learn>=1.5
+
+# ── Modeling ─────────────────────────────────────────────────────────────────
+torch>=2.7
+xgboost>=2.0
+peft>=0.11               # LoRA
+safetensors>=0.4
+transformers>=4.45       # GPT2Config used by ethos/model_local.py
+
+# ── Inference utilities ──────────────────────────────────────────────────────
+tqdm>=4.66
+loguru>=0.7              # ethos/run_infer.py
+
+# ── Visualization ────────────────────────────────────────────────────────────
+matplotlib>=3.9
+
+# ── Experiment tracking (optional; backbone training only) ───────────────────
+wandb>=0.17
+
+# ── Stream A — LLM ATC drug-class mapping (optional; one-off) ────────────────
+# Not required to reproduce paper numbers if you reuse experiments/vocab/
+# stream_a_atc/outputs/atc_final_mapping.csv. Install only when re-running:
+#   vllm>=0.6
+#   transformers>=4.45
+
+# ── Notebook / reporting (optional) ──────────────────────────────────────────
+# jupyter
+# python-pptx              # paper/meetings/generate_meeting_*.py

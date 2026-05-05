@@ -1,0 +1,92 @@
+# CHD dataset config for ethos_tokenize
+# Our data is already clean MEDS format — no MIMIC-specific transforms needed.
+#
+# Code structure in our data:
+#   Static (NaT): DEMO//, PROCEDURE//SURG_HX//, DIAGNOSIS//MEDHX// (no date)
+#   Numeric:      LAB//, VITAL//PREPROCEDURE//, SDE//, MED// (with dose)
+#   Binary flags: AN_EVENT//, ADT//, LDA//, TRANSFUSION//, ENCOUNTER//
+#
+# Pipeline:
+#   1. filter_codes  — remove noisy/rare codes
+#   2. CodeCounter   — count frequencies → vocabulary selection
+#   3. Quantizator   — quantile-encode LAB// and VITAL// numeric values
+#   4. transform_to_quantiles — replace numeric values with quantile tokens
+#   5. StaticDataCollector — pull out DEMO// as static patient features
+#   6. filter_codes  — remove static codes from timeline (they become context at inference)
+#   7. inject_time_intervals — insert time-gap tokens between events
+#   8. IntervalEstimator — estimate gap frequencies
+#   9. CodeCounter   — final vocabulary count
+
+name: chd
+
+stages:
+  # ── Stage 1: Remove codes we don't want in the model vocabulary ─────────────
+  - name: filter_codes
+    params:
+      codes_to_remove:
+        # AN_EVENT Quick Notes contain free text → too noisy for tokenization
+        - AN_EVENT//QUICK_NOTE
+        # Cardiology notes are separate (free-text only)
+        - ENCOUNTER//CARDIOLOGY//
+        # Remove end/removed events (these are redundant with placement events)
+        - LDA//
+        - TRANSFUSION//
+        - ADT//
+      is_prefix: false
+    # Note: we keep LDA//PLACED, ADT//IN etc. — the above removes all with matching prefix
+    # Correction: use prefix matching only for the ones we want to remove by prefix
+
+  # ── Stage 2: Count code frequencies (used to define vocabulary) ─────────────
+  - name: CodeCounter
+    agg_to: ${output_dir}/${code_counts_fn}
+    skip: ${is_not_null:${vocab}}
+
+  # ── Stage 3: Quantize numeric codes (LAB// and VITAL//) ─────────────────────
+  - name: Quantizator
+    params:
+      code_prefixes:
+        - LAB//
+        - VITAL//PREPROCEDURE//
+        - SDE//
+    agg_to: ${output_dir}/${quantiles_fn}
+    agg_params:
+      num_quantiles: ${num_quantiles}
+    skip: ${is_not_null:${vocab}}
+
+  # ── Stage 4: Replace numeric values with quantile tokens ────────────────────
+  - name: transform_to_quantiles
+    params:
+      code_quantiles: ${default_if_null:${vocab},${output_dir}}/${quantiles_fn}
+
+  # ── Stage 5: Collect static demographic codes (NaT events) ──────────────────
+  # Note: prefixes must match the first "//" segment (no trailing "//")
+  # DIAGNOSIS//MEDHX// and PROCEDURE//SURG_HX// are left in the timeline as
+  # NaT events (they sort to the front naturally via inject_time_intervals)
+  - name: StaticDataCollector
+    agg_to: ${output_dir}/static_data.pickle
+    params:
+      static_code_prefixes:
+        - DEMO
+
+  # ── Stage 6: Remove static DEMO codes from the timeline ────────────────────
+  - name: filter_codes
+    params:
+      codes_to_remove:
+        - DEMO
+      is_prefix: true
+
+  # ── Stage 7: Inject time-gap tokens between events ──────────────────────────
+  - name: inject_time_intervals
+    params:
+      time_intervals_spec: ${time_intervals_spec}
+
+  # ── Stage 8: Estimate interval frequencies ───────────────────────────────────
+  - name: IntervalEstimator
+    params:
+      time_intervals_spec: ${time_intervals_spec}
+    agg_to: ${output_dir}/${intervals_fn}
+    skip: ${is_not_null:${vocab}}
+
+  # ── Stage 9: Final code count (for vocabulary) ───────────────────────────────
+  - name: CodeCounter
+    agg_to: ${output_dir}/${code_counts_fn}

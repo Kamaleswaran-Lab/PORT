@@ -1,0 +1,60 @@
+# Data
+/work/
+*.parquet
+*.csv
+*.rpt
+*.sif
+
+# Upstream ETHOS package (separate repository, install via pip install -e)
+ethos-ares/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.eggs/
+dist/
+build/
+.eggs/
+
+# Logs and SLURM output
+*.log
+*.out
+*.err
+nohup.out
+slurm-*.out
+**/logs/
+
+# Model checkpoints
+*.pt
+*.pth
+*.safetensors
+*.pkl
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Overleaf manuscript repository (tracked separately)
+paper/overleaf/
+
+# Working presentations (may discuss patient-level data)
+paper/meetings/
+
+# Hydra multirun outputs
+multirun/
+outputs/
+
+# LLM filter intermediate results (may contain free-text patient notes)
+datapreprocessing/iod2_llm_results/
+
+# Tmp
+tmp/
+*.tmp

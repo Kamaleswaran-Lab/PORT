@@ -1,0 +1,99 @@
+# CHD dataset config — Vocabulary reconstruction (ETHOS-aligned)
+#
+# changes vs prior:
+#   (1) ICD-10-CM hierarchical decomposition (DIAG + PROBLEM + CARDIOLOGY)
+#       34,322 raw codes → ~2,446 shared hierarchical tokens
+#       ref: Stream B, ethos-ares preprocessors.py:307-339
+#   (2) MED → ATC hierarchical via LLM (Chen 2024 + Xu 2025)
+#       2,496 drugs → ~300 ATC L1-L4 tokens
+#   (3) LAB top-500 / PROCEDURE top-500 / SDE top-300 frequency cutoffs
+#   (4) DEMO race atomic decomposition + LANGUAGE split (bug fix)
+#   (5) New: INSURANCE (6), POINT_OF_ORIGIN (6), HOME_COUNTY (51)
+#   (6) Cleanup: AN_EVENT typo, TRANSFUSION consolidation, MED/LDA leak
+#
+# Target vocab: ~4,900 tokens ((prior baseline 47,691))
+#
+# Active work: Stream A (LLM ATC) pending. Once mapping ready, run tokenize_v4.
+
+name: chd
+
+stages:
+  # ── Stage 0: Apply preprocessing transforms ──────────────────────────────
+  # These transforms are applied before standard ETHOS stages.
+  # Each reads a mapping/vocab file produced by the vocab streams.
+
+  # 0a: MED/LDA leak redirect (Stream F)
+  - name: apply_med_lda_leak_map
+    params:
+      mapping_file: ${v4_dir}/outputs/med_lda_leak_map.csv
+      # Redirects MED//PERIPHERAL_ARTLINE → LDA//ARTERIAL_LIN etc.
+
+  # 0b: AN_EVENT typo fix (Stream F)
+  - name: apply_an_event_map
+    params:
+      mapping_file: ${v4_dir}/outputs/an_event_map.csv
+      # HYPERVENTALATION → HYPERVENTILATION
+
+  # 0c: TRANSFUSION consolidation (Stream F)
+  - name: apply_transfusion_map
+    params:
+      mapping_file: ${v4_dir}/outputs/transfusion_map.csv
+      # 44 → 14 tokens
+
+  # 0d: ICD-10 hierarchical decomposition (Stream B)
+  - name: apply_icd10_hier
+    params:
+      # Decomposes DIAGNOSIS//ICD10//X, PROBLEM//ICD10//X, ENCOUNTER//CARDIOLOGY//ICD10//X
+      # into shared [ICD//CM//{part1}, ICD//CM//3-6//{part2}, ICD//CM//SFX//{part3}]
+      shared_vocab: true
+      preserve_end_marker: true
+
+  # 0e: MED → ATC (Stream A — pending LLM pilot)
+  - name: apply_med_atc
+    params:
+      mapping_file: ${v4_dir}/outputs/drug_name_to_atc.csv
+      # Full mapping from MED code → ATC L1+L2+L3+L4 tokens
+      levels: [1, 2, 3, 4]     # L5 leaf dropped (L4 gives 912 atoms, ATC-style 3-token scheme)
+
+  # 0f: DEMO bug fix + LANGUAGE split (Stream D)
+  - name: apply_demo_language
+    params:
+      race_atomic: true
+      language_category: LANGUAGE
+      top_languages: 5
+
+  # 0g: New SES fields (Stream E)
+  - name: emit_ses_events
+    params:
+      insurance_vocab: ${v4_dir}/outputs/insurance_vocab.csv
+      poi_vocab: ${v4_dir}/outputs/point_of_origin_vocab.csv
+      county_vocab: ${v4_dir}/outputs/home_county_vocab.csv
+      time_stamped: [INSURANCE, POINT_OF_ORIGIN]
+      static: [HOME_COUNTY]
+
+  # 0h: Frequency cutoffs (Stream C)
+  - name: apply_cutoffs
+    params:
+      cutoffs:
+        LAB: ${v4_dir}/outputs/lab_top500_vocab.csv
+        PROCEDURE: ${v4_dir}/outputs/procedure_top500_vocab.csv
+        ENCOUNTER//AN//PRIMARY_PROCEDURE: ${v4_dir}/outputs/encounter_an_primary_top500_vocab.csv
+        SDE: ${v4_dir}/outputs/sde_top300_vocab.csv
+      other_fallback: true
+
+  # ── Stages 1+: Standard ETHOS tokenization pipeline ─────────────────────────
+
+  - name: filter_codes
+    params:
+      codes_to_remove:
+        - AN_EVENT//QUICK_NOTE     # unchanged from  — free-text quick note
+      is_prefix: false
+
+  # (Remaining stages follow ETHOS  config:
+  #   CodeCounter → Quantizator → vocab_build → apply_vocab → save_timeline)
+  # Exact stages to be filled in during integration.
+
+# Interpolation variables
+v4_dir: experiments/vocab
+output_dir: /path/to/CHD_MEDS/tokenized
+input_dir: /path/to/CHD_MEDS/ethos_input
