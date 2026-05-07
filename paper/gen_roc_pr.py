@@ -29,8 +29,8 @@ rcParams.update({
     "font.family": "sans-serif",
     "font.sans-serif": ["Helvetica", "Arial", "DejaVu Sans"],
     "font.size": 12,
-    "axes.titlesize": 12,
-    "axes.labelsize": 12,
+    "axes.titlesize": 14,
+    "axes.labelsize": 14,
     "axes.linewidth": 0.8,
     "axes.spines.top": False,
     "axes.spines.right": False,
@@ -79,14 +79,47 @@ STYLES = {
     "ASA score":    dict(color="#C0392B", lw=1.1, ls="-."),
 }
 
-# Compute curves
+# Compute curves and bootstrap envelopes
+def bootstrap_curves(y, p, n_boot=2000, n_grid=200, seed=42):
+    """Bootstrap ROC and PR curve envelopes interpolated to a common grid."""
+    fpr_grid = np.linspace(0, 1, n_grid)
+    rec_grid = np.linspace(0, 1, n_grid)
+    tprs = np.full((n_boot, n_grid), np.nan)
+    precs = np.full((n_boot, n_grid), np.nan)
+    rng = np.random.default_rng(seed)
+    n = len(y)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, n)
+        yi = y[idx]
+        if yi.sum() == 0 or yi.sum() == n:
+            continue
+        pi = p[idx]
+        fpr_i, tpr_i, _ = roc_curve(yi, pi)
+        tprs[i] = np.interp(fpr_grid, fpr_i, tpr_i)
+        prec_i, rec_i, _ = precision_recall_curve(yi, pi)
+        # PR curve recall is monotonically decreasing; reverse for interp
+        order = np.argsort(rec_i)
+        precs[i] = np.interp(rec_grid, rec_i[order], prec_i[order])
+    tpr_lo = np.nanpercentile(tprs, 2.5, axis=0)
+    tpr_hi = np.nanpercentile(tprs, 97.5, axis=0)
+    prec_lo = np.nanpercentile(precs, 2.5, axis=0)
+    prec_hi = np.nanpercentile(precs, 97.5, axis=0)
+    return fpr_grid, tpr_lo, tpr_hi, rec_grid, prec_lo, prec_hi
+
 roc_data = {}
 pr_data  = {}
+roc_envelope = {}
+pr_envelope  = {}
+print("Computing bootstrap envelopes (n=2000 each curve) …")
 for name, (y, p) in models.items():
     fpr, tpr, _ = roc_curve(y, p)
     prec, rec, _ = precision_recall_curve(y, p)
     roc_data[name] = (fpr, tpr, roc_auc_score(y, p))
     pr_data[name]  = (rec, prec, average_precision_score(y, p))
+    fg, tlo, thi, rg, plo, phi = bootstrap_curves(y, p, n_boot=2000)
+    roc_envelope[name] = (fg, tlo, thi)
+    pr_envelope[name]  = (rg, plo, phi)
+    print(f"  {name:14s} envelopes computed")
 
 roc_order = sorted(models.keys(), key=lambda n: roc_data[n][2], reverse=True)
 pr_order  = sorted(models.keys(), key=lambda n: pr_data[n][2],  reverse=True)
@@ -150,27 +183,36 @@ ax_roc = fig.add_subplot(1, 3, 1)
 ax_pr  = fig.add_subplot(1, 3, 2)
 ax_sig = fig.add_subplot(1, 3, 3)
 
-# (a) ROC
+# (a) ROC with bootstrap envelopes (95% CI shaded)
 for name in roc_order:
     fpr, tpr, auc = roc_data[name]
-    ax_roc.plot(fpr, tpr, label=f"{name}  ({auc:.3f})", **STYLES[name])
+    fg, tlo, thi = roc_envelope[name]
+    s = STYLES[name]
+    # Shade only headline models to avoid visual clutter
+    if name in ("PORT", "BiLSTM"):
+        ax_roc.fill_between(fg, tlo, thi, color=s["color"], alpha=0.15, lw=0, zorder=1)
+    ax_roc.plot(fpr, tpr, label=f"{name}  ({auc:.3f})", **s)
 ax_roc.plot([0, 1], [0, 1], color="0.8", lw=0.7, ls="--", zorder=0)
 ax_roc.set_xlim(-0.005, 1.0); ax_roc.set_ylim(0.0, 1.005)
 ax_roc.set_xticks(np.linspace(0, 1, 6)); ax_roc.set_yticks(np.linspace(0, 1, 6))
 ax_roc.set_xlabel("False positive rate"); ax_roc.set_ylabel("True positive rate")
 ax_roc.set_aspect("equal", adjustable="box")
-ax_roc.set_title("(a) Discrimination (AUROC)", fontsize=12, pad=8)
+ax_roc.set_title("(a) Discrimination (AUROC)", fontsize=14, pad=8)
 ax_roc.legend(loc="lower right")
 
-# (b) PR
+# (b) PR with bootstrap envelopes (95% CI shaded for headline models)
 for name in pr_order:
     rec, prec, auprc = pr_data[name]
-    ax_pr.plot(rec, prec, label=f"{name}  ({auprc:.3f})", **STYLES[name])
+    rg, plo, phi = pr_envelope[name]
+    s = STYLES[name]
+    if name in ("PORT", "BiLSTM"):
+        ax_pr.fill_between(rg, plo, phi, color=s["color"], alpha=0.15, lw=0, zorder=1)
+    ax_pr.plot(rec, prec, label=f"{name}  ({auprc:.3f})", **s)
 ax_pr.axhline(prev, color="0.6", lw=0.8, ls=":", zorder=0)
 ax_pr.set_xlim(-0.005, 1.0); ax_pr.set_ylim(0.0, 0.36)
 ax_pr.set_xticks(np.linspace(0, 1, 6)); ax_pr.set_yticks(np.arange(0, 0.36, 0.05))
 ax_pr.set_xlabel("Recall"); ax_pr.set_ylabel("Precision")
-ax_pr.set_title("(b) Positive-class precision (AUPRC)", fontsize=12, pad=8)
+ax_pr.set_title("(b) Positive-class precision (AUPRC)", fontsize=14, pad=8)
 ax_pr.legend(loc="upper right")
 
 # (c) Per-model AUROC with bootstrap 95% CI, sorted descending
@@ -257,7 +299,7 @@ ax_sig.set_yticks(yvals)
 ax_sig.set_yticklabels(order, fontsize=11)
 ax_sig.set_xlim(0.45, 1.0)
 ax_sig.set_xlabel("Test AUROC (95% bootstrap CI)")
-ax_sig.set_title("(c) Per-model AUROC with confidence intervals", fontsize=12, pad=8)
+ax_sig.set_title("(c) Per-model AUROC with confidence intervals", fontsize=14, pad=8)
 
 # Common minimal style: hide top/right spines + dashed major grid
 for ax in (ax_roc, ax_pr, ax_sig):

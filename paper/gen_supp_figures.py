@@ -167,21 +167,37 @@ def fig_subgroup_asa():
                   how="left").dropna(subset=["asa"])
 
     classes  = ["I", "II", "III", "IV", "V+"]
-    aurocs, ns = [], []
+    aurocs, ns, ci_los, ci_his = [], [], [], []
     for ac in [1, 2, 3, 4, 5]:
         sub = df[df.asa == ac] if ac < 5 else df[df.asa >= 5]
         if len(sub) >= 10 and sub.y_true.sum() >= 2:
-            aurocs.append(roc_auc_score(sub.y_true, sub.y_prob))
+            ys = sub.y_true.astype(int).values
+            ps = sub.y_prob.values
+            aurocs.append(roc_auc_score(ys, ps))
+            # Bootstrap CI for AUROC at this subgroup
+            rng = np.random.default_rng(42)
+            n = len(ys)
+            boots = []
+            for _ in range(2000):
+                idx = rng.integers(0, n, n)
+                yi = ys[idx]
+                if yi.sum() == 0 or yi.sum() == n: continue
+                boots.append(roc_auc_score(yi, ps[idx]))
+            ci_los.append(np.percentile(boots, 2.5))
+            ci_his.append(np.percentile(boots, 97.5))
         else:
-            aurocs.append(np.nan)
+            aurocs.append(np.nan); ci_los.append(np.nan); ci_his.append(np.nan)
         ns.append(len(sub))
 
     fig, ax = plt.subplots(figsize=(6.5, 4.6))
     bar_colors = ["#3D5A8A", "#3D5A8A", "#1F3A5F", "#9C2A2F", "#9C2A2F"]
-    bars = ax.bar(classes, aurocs, color=bar_colors, edgecolor="black", lw=0.6, width=0.65)
-    for b, v, n in zip(bars, aurocs, ns):
+    err_lo = [v - l if not np.isnan(v) else 0 for v, l in zip(aurocs, ci_los)]
+    err_hi = [h - v if not np.isnan(v) else 0 for v, h in zip(aurocs, ci_his)]
+    bars = ax.bar(classes, aurocs, color=bar_colors, edgecolor="black", lw=0.6, width=0.65,
+                  yerr=[err_lo, err_hi], error_kw=dict(ecolor="#222", lw=1.0, capsize=4))
+    for b, v, n, ch in zip(bars, aurocs, ns, ci_his):
         if not np.isnan(v):
-            ax.text(b.get_x() + b.get_width()/2, v + 0.008,
+            ax.text(b.get_x() + b.get_width()/2, ch + 0.008,
                     f"{v:.3f}", ha="center", va="bottom",
                     fontsize=11, fontweight="bold")
             ax.text(b.get_x() + b.get_width()/2, 0.515,
@@ -208,17 +224,32 @@ def fig_decision_curve():
     thresholds = np.linspace(0.005, 0.20, 80)
     fig, ax = plt.subplots(figsize=(6.8, 4.6))
 
-    # Order to plot: weakest first so PORT lands on top
+    def net_benefit(y, p, t):
+        flag = p >= t
+        N = len(y)
+        return (flag & (y == 1)).sum() / N - (flag & (y == 0)).sum() / N * (t / (1 - t))
+
+    # Order to plot: weakest first so PORT lands on top.
+    # Bootstrap envelope (95% CI shaded) for headline models only (PORT, BiLSTM)
+    # to avoid visual clutter; other curves drawn as point estimates.
     for name in ["ASA score", "LR (MEDS)", "XGB (MEDS)", "BiLSTM", "PORT"]:
         y, p = models[name]
-        N = len(y)
-        nb = []
-        for t in thresholds:
-            flag = p >= t
-            tp = (flag & (y == 1)).sum()
-            fp = (flag & (y == 0)).sum()
-            nb.append(tp/N - fp/N * (t/(1-t)))
+        nb = np.array([net_benefit(y, p, t) for t in thresholds])
         s = STYLES[name]
+        if name in ("PORT", "BiLSTM"):
+            # Bootstrap CI
+            rng = np.random.default_rng(42)
+            n = len(y)
+            boot_nb = np.full((2000, len(thresholds)), np.nan)
+            for i in range(2000):
+                idx = rng.integers(0, n, n)
+                yi = y[idx]
+                if yi.sum() == 0: continue
+                pi = p[idx]
+                boot_nb[i] = [net_benefit(yi, pi, t) for t in thresholds]
+            lo = np.nanpercentile(boot_nb, 2.5, axis=0)
+            hi = np.nanpercentile(boot_nb, 97.5, axis=0)
+            ax.fill_between(thresholds, lo, hi, color=s["color"], alpha=0.15, lw=0, zorder=1)
         ax.plot(thresholds, nb, label=name, **s)
 
     # Reference strategies
