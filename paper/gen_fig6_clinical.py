@@ -23,6 +23,7 @@ from matplotlib import rcParams
 from matplotlib.patches import Rectangle
 
 R_V4   = Path("/path/to/CHD_MEDS/results/baselines")
+R_LSTM = Path("/path/to/CHD_MEDS/results/baselines_tuned")
 CF     = Path("/path/to/CHD_MEDS/results/evaluation/counterfactual/counterfactual_predictions.parquet")
 TASK   = Path("/path/to/CHD_MEDS/outcome/iod_task.parquet")
 ANP    = Path("/path/to/CHOA_RAW_TABLES/CHOA_DATA_Tables_CHD/DR15201_AN_Patients.rpt")
@@ -46,12 +47,14 @@ rcParams.update({
 })
 
 PORT_BLUE = "#1F3A5F"
+LSTM_PURPLE = "#9467BD"
 RED       = "#C0392B"
 GRAY      = "#888888"
 GREEN     = "#2E864D"
 
 # ── Load data ──
 pp = pd.read_parquet(R_V4 / "ethos_finetune_lora_test_predictions_v4_lora_s123.parquet")
+lstm = pd.read_parquet(R_LSTM / "lstm_tuned_test_predictions.parquet")
 cf = pd.read_parquet(CF)
 
 an = pd.read_csv(ANP, sep="|", usecols=["C MRN","ASA PS Score","Encounter CSN"], dtype=str)
@@ -95,19 +98,32 @@ for lo, hi, lbl, color in strata:
     s_iod_rate.append(100 * sub.y_true.mean() if len(sub) > 0 else 0.0)
 
 x = np.arange(len(strata))
-bars = ax_a.bar(x, s_iod_rate, color=s_color, edgecolor="black", lw=0.6, width=0.7)
+bars = ax_a.bar(x, s_iod_rate, color=s_color, edgecolor="black", lw=0.6, width=0.7,
+                label="PORT")
 for xi, rate, n, pos in zip(x, s_iod_rate, s_n, s_pos):
     ax_a.text(xi, rate + 0.15, f"{rate:.1f}%", ha="center", va="bottom",
               fontsize=11, fontweight="bold")
     ax_a.text(xi, rate + 0.85, f"n={n:,}\n({pos} IoD+)", ha="center", va="bottom",
               fontsize=8, color="0.35")
 
+# BiLSTM IoD rate at the SAME PORT-defined strata boundaries (same patients
+# binned by their LSTM predicted probability) for direct comparison.
+y_lstm = lstm.y_true.astype(int).values
+p_lstm = lstm.y_prob.values
+lstm_rates = []
+for lo, hi, *_ in strata:
+    sub = (p_lstm >= lo) & (p_lstm < hi)
+    lstm_rates.append(100 * y_lstm[sub].mean() if sub.sum() > 0 else 0.0)
+ax_a.plot(x, lstm_rates, "-^", color=LSTM_PURPLE, lw=1.6, ms=8, mec="white",
+          mew=0.8, label="BiLSTM (same thresholds)", zorder=5)
+
 ax_a.set_xticks(x); ax_a.set_xticklabels(s_labels, fontsize=10)
 ax_a.set_ylim(0, max(s_iod_rate) * 1.35)
 ax_a.set_ylabel("Observed IoD+ rate (%)")
-ax_a.set_xlabel("PORT predicted-risk stratum")
-ax_a.set_title("(a) Risk concentration across PORT strata", fontsize=12, pad=8)
+ax_a.set_xlabel("Predicted-risk stratum")
+ax_a.set_title("(a) Risk concentration across strata", fontsize=12, pad=8)
 ax_a.grid(axis="y", alpha=0.3, ls="--", zorder=0); ax_a.set_axisbelow(True)
+ax_a.legend(loc="upper left", fontsize=10)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # (b) PORT vs ASA discordance (2x2 contingency)
@@ -199,7 +215,16 @@ y_sorted = y_full[order]
 cum_cap = np.cumsum(y_sorted) / P            # cumulative fraction of IoD+ captured
 cum_pop = (np.arange(N) + 1) / N             # cumulative fraction of population screened
 
+# BiLSTM cumulative capture, computed on its own test split.
+order_l = np.argsort(-p_lstm)
+y_l_sorted = y_lstm[order_l]
+P_l = int(y_lstm.sum()); N_l = len(y_lstm)
+cum_cap_l = np.cumsum(y_l_sorted) / P_l
+cum_pop_l = (np.arange(N_l) + 1) / N_l
+
 ax_d.plot(cum_pop * 100, cum_cap * 100, color=PORT_BLUE, lw=2.4, label="PORT")
+ax_d.plot(cum_pop_l * 100, cum_cap_l * 100, color=LSTM_PURPLE, lw=1.8, ls="-",
+          label="BiLSTM")
 ax_d.plot([0, 100], [0, 100], color="0.55", lw=1.0, ls="--", label="Random ranking")
 
 # Annotate selected screening fractions
