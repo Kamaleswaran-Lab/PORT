@@ -196,7 +196,6 @@ ax_roc.plot([0, 1], [0, 1], color="0.8", lw=0.7, ls="--", zorder=0)
 ax_roc.set_xlim(-0.005, 1.0); ax_roc.set_ylim(0.0, 1.005)
 ax_roc.set_xticks(np.linspace(0, 1, 6)); ax_roc.set_yticks(np.linspace(0, 1, 6))
 ax_roc.set_xlabel("False positive rate"); ax_roc.set_ylabel("True positive rate")
-ax_roc.set_aspect("equal", adjustable="box")
 ax_roc.set_title("(a) Discrimination (AUROC)", fontsize=14, pad=8)
 ax_roc.legend(loc="lower right")
 
