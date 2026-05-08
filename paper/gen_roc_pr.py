@@ -177,20 +177,20 @@ ci_lo, ci_hi = np.percentile(deltas, [2.5, 97.5])
 p_two_sided = (deltas <= 0).mean() * 2
 print(f"  Bootstrap Δ: {deltas.mean():+.4f}  CI95=[{ci_lo:+.4f}, {ci_hi:+.4f}]  p={p_two_sided:.4g}")
 
-# ── Figure: 3 panels ──────────────────────────────────────────────────────────
-fig = plt.figure(figsize=(15.5, 4.4))
-ax_roc = fig.add_subplot(1, 3, 1)
-ax_pr  = fig.add_subplot(1, 3, 2)
-ax_sig = fig.add_subplot(1, 3, 3)
+# ── Figure: 2 panels (ROC + PR with bootstrap CI bands) ──────────────────────
+fig, (ax_roc, ax_pr) = plt.subplots(1, 2, figsize=(11, 4.6))
 
 # (a) ROC with bootstrap envelopes (95% CI shaded)
 for name in roc_order:
     fpr, tpr, auc = roc_data[name]
     fg, tlo, thi = roc_envelope[name]
     s = STYLES[name]
-    # Shade only headline models to avoid visual clutter
+    # Shade only headline models to avoid visual clutter; use a higher alpha
+    # plus a thin boundary edge so the band is clearly visible at print size.
     if name in ("PORT", "BiLSTM"):
-        ax_roc.fill_between(fg, tlo, thi, color=s["color"], alpha=0.15, lw=0, zorder=1)
+        ax_roc.fill_between(fg, tlo, thi, color=s["color"], alpha=0.30, lw=0, zorder=1)
+        ax_roc.plot(fg, tlo, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
+        ax_roc.plot(fg, thi, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
     ax_roc.plot(fpr, tpr, label=f"{name}  ({auc:.3f})", **s)
 ax_roc.plot([0, 1], [0, 1], color="0.8", lw=0.7, ls="--", zorder=0)
 ax_roc.set_xlim(-0.005, 1.0); ax_roc.set_ylim(0.0, 1.005)
@@ -200,13 +200,15 @@ ax_roc.set_aspect("equal", adjustable="box")
 ax_roc.set_title("(a) Discrimination (AUROC)", fontsize=14, pad=8)
 ax_roc.legend(loc="lower right")
 
-# (b) PR with bootstrap envelopes (95% CI shaded for headline models)
+# (b) PR with bootstrap envelopes
 for name in pr_order:
     rec, prec, auprc = pr_data[name]
     rg, plo, phi = pr_envelope[name]
     s = STYLES[name]
     if name in ("PORT", "BiLSTM"):
-        ax_pr.fill_between(rg, plo, phi, color=s["color"], alpha=0.15, lw=0, zorder=1)
+        ax_pr.fill_between(rg, plo, phi, color=s["color"], alpha=0.30, lw=0, zorder=1)
+        ax_pr.plot(rg, plo, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
+        ax_pr.plot(rg, phi, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
     ax_pr.plot(rec, prec, label=f"{name}  ({auprc:.3f})", **s)
 ax_pr.axhline(prev, color="0.6", lw=0.8, ls=":", zorder=0)
 ax_pr.set_xlim(-0.005, 1.0); ax_pr.set_ylim(0.0, 0.36)
@@ -215,94 +217,8 @@ ax_pr.set_xlabel("Recall"); ax_pr.set_ylabel("Precision")
 ax_pr.set_title("(b) Positive-class precision (AUPRC)", fontsize=14, pad=8)
 ax_pr.legend(loc="upper right")
 
-# (c) Per-model AUROC with bootstrap 95% CI, sorted descending
-print("Computing per-model bootstrap AUROC CIs …")
-bar_models = ["PORT", "BiLSTM", "XGB (MEDS)", "LR (MEDS)", "ASA score", "XGB (manual)", "LR (manual)"]
-
-# Use the encounter intersection so all models are evaluated on the exact same encounters
-# (PORT loses 4,060 encounters during tokenization, so this fairs the comparison)
-ints = port_with_csn.copy()
-for name in bar_models:
-    if name == "PORT":
-        continue
-    if name == "BiLSTM":
-        df = pd.read_parquet(R_NEW / "lstm_tuned_test_predictions.parquet")
-        ints = ints.merge(df[["encounter_csn", "y_prob"]].rename(columns={"y_prob": f"y_{name}"}), on="encounter_csn", how="inner")
-    elif name in ("LR (manual)", "XGB (manual)"):
-        df = pd.read_parquet(R_NEW / "test_preds_manual_tuned.parquet")
-        col = "prob_lr_manual" if name == "LR (manual)" else "prob_xgb_manual"
-        df["encounter_csn"] = df.encounter_csn
-        ints = ints.merge(df[["encounter_csn", col]].rename(columns={col: f"y_{name}"}), on="encounter_csn", how="inner")
-    elif name in ("LR (MEDS)", "XGB (MEDS)"):
-        df = pd.read_parquet(R_NEW / "test_preds_meds_tuned.parquet")
-        col = "prob_lr_meds" if name == "LR (MEDS)" else "prob_xgb_meds"
-        ints = ints.merge(df[["encounter_csn", col]].rename(columns={col: f"y_{name}"}), on="encounter_csn", how="inner")
-    elif name == "ASA score":
-        df = pd.read_parquet(R_BASE / "asa_test_predictions.parquet")
-        df["encounter_csn"] = df.encounter_csn
-        ints = ints.merge(df[["encounter_csn", "y_prob"]].rename(columns={"y_prob": f"y_{name}"}), on="encounter_csn", how="inner")
-ints = ints.rename(columns={"y_port": "y_PORT"})
-
-print(f"  Common-encounter intersection across all 7 models: n={len(ints):,}, IoD+={int(ints.y_true.sum())}")
-y_common = ints.y_true.astype(int).values
-
-aurocs_point = {}
-auroc_lo = {}
-auroc_hi = {}
-n_b = len(ints)
-for name in bar_models:
-    p = ints[f"y_{name}"].values
-    aurocs_point[name] = roc_auc_score(y_common, p)
-    rng2 = np.random.default_rng(42)
-    boots = []
-    for _ in range(2000):
-        idx = rng2.integers(0, n_b, n_b)
-        yi = y_common[idx]
-        if yi.sum() == 0 or yi.sum() == n_b:
-            continue
-        boots.append(roc_auc_score(yi, p[idx]))
-    boots = np.array(boots)
-    auroc_lo[name] = np.percentile(boots, 2.5)
-    auroc_hi[name] = np.percentile(boots, 97.5)
-    print(f"    {name:14s} AUROC = {aurocs_point[name]:.3f}  CI95 [{auroc_lo[name]:.3f}, {auroc_hi[name]:.3f}]")
-
-# Bar chart, sorted by AUROC descending
-order = sorted(bar_models, key=lambda m: aurocs_point[m], reverse=True)
-yvals = np.arange(len(order))[::-1]  # so PORT is at top
-xs = [aurocs_point[m] for m in order]
-err_lo = [aurocs_point[m] - auroc_lo[m] for m in order]
-err_hi = [auroc_hi[m] - aurocs_point[m] for m in order]
-colors = [STYLES[m]["color"] for m in order]
-
-ax_sig.barh(yvals, xs, color=colors, alpha=0.85, edgecolor="white", linewidth=0.6,
-            xerr=[err_lo, err_hi],
-            error_kw=dict(ecolor="#222", lw=1.0, capsize=4))
-
-# Numeric labels at the right end of each bar
-for y, x, m in zip(yvals, xs, order):
-    ax_sig.text(x + max(err_hi) + 0.012, y, f"{x:.3f}",
-                ha="left", va="center", fontsize=11, color="0.2")
-
-# Reference line at chance
-ax_sig.axvline(0.5, color="0.6", lw=0.7, ls="--", zorder=0)
-
-# Significance annotation between PORT and BiLSTM (top two bars)
-top_y = yvals[0]
-second_y = yvals[1]
-x_ann = max(xs) + max(err_hi) + 0.07
-ax_sig.annotate("", xy=(x_ann, top_y), xytext=(x_ann, second_y),
-                arrowprops=dict(arrowstyle="-", lw=1.0, color="0.3"))
-ax_sig.text(x_ann + 0.005, (top_y + second_y) / 2, f"$p = {p_two_sided:.3f}$",
-            ha="left", va="center", fontsize=11, color="0.2")
-
-ax_sig.set_yticks(yvals)
-ax_sig.set_yticklabels(order, fontsize=11)
-ax_sig.set_xlim(0.45, 1.0)
-ax_sig.set_xlabel("Test AUROC (95% bootstrap CI)")
-ax_sig.set_title("(c) Per-model AUROC with confidence intervals", fontsize=14, pad=8)
-
-# Common minimal style: hide top/right spines + dashed major grid
-for ax in (ax_roc, ax_pr, ax_sig):
+# Common minimal style for both panels
+for ax in (ax_roc, ax_pr):
     ax.tick_params(axis="both", which="major", length=3.5, pad=2)
     for spine in ("top", "right"):
         ax.spines[spine].set_visible(False)
@@ -330,8 +246,6 @@ stats = {
     "delta_ci95_lo": float(ci_lo),
     "delta_ci95_hi": float(ci_hi),
     "p_two_sided": float(p_two_sided),
-    "per_model_auroc_intersection_n": int(len(ints)),
-    "per_model_auroc": {m: {"point": float(aurocs_point[m]), "ci_lo": float(auroc_lo[m]), "ci_hi": float(auroc_hi[m])} for m in bar_models},
 }
 (FIG / "../../paper/roc_pr_significance_stats.json").parent.mkdir(parents=True, exist_ok=True)
 with open(R_NEW / "port_vs_bilstm_significance.json", "w") as f:
