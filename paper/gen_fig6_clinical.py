@@ -187,38 +187,43 @@ ax_c.grid(True, alpha=0.3, ls="--", zorder=0); ax_c.set_axisbelow(True)
 ax_c.legend(loc="upper left", fontsize=9)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# (d) Decision-curve analysis with threshold-keyed actions
+# (d) Cumulative IoD capture by PORT-ranked screening
 # ══════════════════════════════════════════════════════════════════════════════
 y_full = pp.y_true.astype(int).values
 p_full = pp.y_prob.values
-N = len(y_full)
-prev = y_full.mean()
+N = len(y_full); P = int(y_full.sum())
 
-thresholds = np.linspace(0.005, 0.20, 80)
-nb_port, nb_all_treat = [], []
-for t in thresholds:
-    flag = p_full >= t
-    tp = ((flag) & (y_full == 1)).sum()
-    fp = ((flag) & (y_full == 0)).sum()
-    nb_port.append(tp / N - fp / N * (t / (1 - t)))
-    nb_all_treat.append(prev - (1 - prev) * (t / (1 - t)))
+# Sort by PORT score descending
+order = np.argsort(-p_full)
+y_sorted = y_full[order]
+cum_cap = np.cumsum(y_sorted) / P            # cumulative fraction of IoD+ captured
+cum_pop = (np.arange(N) + 1) / N             # cumulative fraction of population screened
 
-ax_d.plot(thresholds, nb_port, color=PORT_BLUE, lw=2.4, label="PORT")
-ax_d.plot(thresholds, nb_all_treat, color="0.45", lw=0.8, ls=":", label="Treat all")
-ax_d.axhline(0, color="0.45", lw=0.8, ls="--", label="Treat none")
+ax_d.plot(cum_pop * 100, cum_cap * 100, color=PORT_BLUE, lw=2.4, label="PORT")
+ax_d.plot([0, 100], [0, 100], color="0.55", lw=1.0, ls="--", label="Random ranking")
 
-# Mark stratum boundaries from panel (a) with thin vertical lines so that
-# the threshold-axis on this panel is visually consistent with (a).
-for t in [0.005, 0.020, 0.050, 0.100]:
-    if t > thresholds.max(): continue
-    ax_d.axvline(t, color="0.65", lw=0.5, ls=":", zorder=0)
+# Annotate selected screening fractions
+def at_population_fraction(frac):
+    idx = int(np.ceil(frac * N)) - 1
+    return cum_pop[idx] * 100, cum_cap[idx] * 100
 
-ax_d.set_xlim(thresholds[0], thresholds[-1])
-ax_d.set_ylim(-0.005, 0.012)
-ax_d.set_xlabel("Threshold probability")
-ax_d.set_ylabel("Net benefit")
-ax_d.set_title("(d) Decision-curve net benefit by threshold", fontsize=12, pad=8)
-ax_d.legend(loc="upper right", fontsize=10)
+annot = [
+    (0.088, f"Top 8.8 %: {at_population_fraction(0.088)[1]:.0f}%\nof IoD events"),
+    (0.20,  f"Top 20 %: {at_population_fraction(0.20)[1]:.0f}%"),
+    (0.50,  f"Top 50 %: {at_population_fraction(0.50)[1]:.0f}%"),
+]
+for frac, txt in annot:
+    xp, yp = at_population_fraction(frac)
+    ax_d.scatter([xp], [yp], color=PORT_BLUE, s=42, edgecolor="white", lw=1.0, zorder=5)
+    ax_d.annotate(txt, xy=(xp, yp), xytext=(xp + 8, yp - 12),
+                  fontsize=9, color=PORT_BLUE, fontweight="bold",
+                  arrowprops=dict(arrowstyle="-", color="0.6", lw=0.6))
+
+ax_d.set_xlim(0, 100); ax_d.set_ylim(0, 100)
+ax_d.set_xlabel("Patients screened, ordered by PORT score (%)")
+ax_d.set_ylabel("IoD+ events captured (%)")
+ax_d.set_title("(d) Cumulative IoD capture by PORT-ranked screening", fontsize=12, pad=8)
+ax_d.legend(loc="lower right", fontsize=10)
 ax_d.grid(True, alpha=0.3, ls="--", zorder=0); ax_d.set_axisbelow(True)
 
 # ── Save ──
