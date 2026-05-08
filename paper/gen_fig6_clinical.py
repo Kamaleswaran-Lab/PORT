@@ -81,16 +81,16 @@ ax_d = fig.add_subplot(gs[1, 1])
 # ══════════════════════════════════════════════════════════════════════════════
 # (a) Risk-stratified IoD rate + action tier
 # ══════════════════════════════════════════════════════════════════════════════
-strata = [(0.000, 0.005, "P < 0.5%",      "Standard care",                      "#bdc3c7"),
-          (0.005, 0.020, "0.5 – 2 %",     "Confirm procedure + ASA",            "#7fb069"),
-          (0.020, 0.050, "2 – 5 %",       "Cardiology consult",                 "#f4a261"),
-          (0.050, 0.100, "5 – 10 %",      "Pre-op optimization",                "#e76f51"),
-          (0.100, 1.001, "> 10 %",        "ECMO standby + senior team",         "#9c2a2f")]
+strata = [(0.000, 0.005, "P < 0.5%",      "#bdc3c7"),
+          (0.005, 0.020, "0.5 – 2 %",     "#7fb069"),
+          (0.020, 0.050, "2 – 5 %",       "#f4a261"),
+          (0.050, 0.100, "5 – 10 %",      "#e76f51"),
+          (0.100, 1.001, "> 10 %",        "#9c2a2f")]
 
-s_labels, s_iod_rate, s_n, s_pos, s_color, s_action = [], [], [], [], [], []
-for lo, hi, lbl, action, color in strata:
+s_labels, s_iod_rate, s_n, s_pos, s_color = [], [], [], [], []
+for lo, hi, lbl, color in strata:
     sub = pp[(pp.y_prob >= lo) & (pp.y_prob < hi)]
-    s_labels.append(lbl); s_color.append(color); s_action.append(action)
+    s_labels.append(lbl); s_color.append(color)
     s_n.append(len(sub)); s_pos.append(int(sub.y_true.sum()))
     s_iod_rate.append(100 * sub.y_true.mean() if len(sub) > 0 else 0.0)
 
@@ -99,28 +99,15 @@ bars = ax_a.bar(x, s_iod_rate, color=s_color, edgecolor="black", lw=0.6, width=0
 for xi, rate, n, pos in zip(x, s_iod_rate, s_n, s_pos):
     ax_a.text(xi, rate + 0.15, f"{rate:.1f}%", ha="center", va="bottom",
               fontsize=11, fontweight="bold")
-    # n displayed inside or above bar (small)
-    ax_a.text(xi, rate + 0.85, f"(n={n:,})", ha="center", va="bottom",
+    ax_a.text(xi, rate + 0.85, f"n={n:,}\n({pos} IoD+)", ha="center", va="bottom",
               fontsize=8, color="0.35")
 
 ax_a.set_xticks(x); ax_a.set_xticklabels(s_labels, fontsize=10)
-ax_a.set_ylim(0, max(s_iod_rate) * 1.30)
-ax_a.set_ylabel("IoD+ rate (%)")
+ax_a.set_ylim(0, max(s_iod_rate) * 1.35)
+ax_a.set_ylabel("Observed IoD+ rate (%)")
 ax_a.set_xlabel("PORT predicted-risk stratum")
-ax_a.set_title("(a) Risk-stratified IoD rate and recommended action", fontsize=12, pad=8)
+ax_a.set_title("(a) Risk concentration across PORT strata", fontsize=12, pad=8)
 ax_a.grid(axis="y", alpha=0.3, ls="--", zorder=0); ax_a.set_axisbelow(True)
-
-# Action labels as a separate compact two-column legend above the plot area
-action_legend_lines = [
-    f"P < 0.5% — Standard care",
-    f"0.5–2 % — Confirm procedure + ASA",
-    f"2–5 % — Cardiology consult",
-    f"5–10 % — Pre-op optimization",
-    f"> 10 % — ECMO standby + senior team",
-]
-ax_a.text(0.02, 0.98, "\n".join(action_legend_lines), transform=ax_a.transAxes,
-          ha="left", va="top", fontsize=8, color="0.25",
-          bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="0.7", lw=0.6))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # (b) PORT vs ASA discordance (2x2 contingency)
@@ -220,30 +207,17 @@ ax_d.plot(thresholds, nb_port, color=PORT_BLUE, lw=2.4, label="PORT")
 ax_d.plot(thresholds, nb_all_treat, color="0.45", lw=0.8, ls=":", label="Treat all")
 ax_d.axhline(0, color="0.45", lw=0.8, ls="--", label="Treat none")
 
-# Annotate clinical action thresholds: stagger labels alternately top/bottom
-# to avoid overlap; arrow points to the (t, nb_t) marker.
-action_points = [
-    (0.005, "Triage",            "top",    0.0085),
-    (0.020, "Confirm procedure", "bottom", -0.0035),
-    (0.050, "Cardiology consult","top",    0.006),
-    (0.100, "ECMO standby",      "bottom", -0.0045),
-]
-for t, lbl, pos, y_text in action_points:
+# Mark stratum boundaries from panel (a) with thin vertical lines so that
+# the threshold-axis on this panel is visually consistent with (a).
+for t in [0.005, 0.020, 0.050, 0.100]:
     if t > thresholds.max(): continue
-    nb_t = nb_port[np.argmin(np.abs(thresholds - t))]
-    ax_d.axvline(t, color="0.55", lw=0.6, ls=":", zorder=0)
-    ax_d.scatter([t], [nb_t], color=PORT_BLUE, s=40, zorder=5,
-                 edgecolor="white", lw=1.0)
-    ax_d.annotate(lbl, xy=(t, nb_t), xytext=(t, y_text),
-                  ha="center", va="bottom" if pos == "top" else "top",
-                  fontsize=9, color=PORT_BLUE, fontweight="bold",
-                  arrowprops=dict(arrowstyle="-", color="0.6", lw=0.7))
+    ax_d.axvline(t, color="0.65", lw=0.5, ls=":", zorder=0)
 
 ax_d.set_xlim(thresholds[0], thresholds[-1])
 ax_d.set_ylim(-0.005, 0.012)
 ax_d.set_xlabel("Threshold probability")
 ax_d.set_ylabel("Net benefit")
-ax_d.set_title("(d) Decision curve with action thresholds", fontsize=12, pad=8)
+ax_d.set_title("(d) Decision-curve net benefit by threshold", fontsize=12, pad=8)
 ax_d.legend(loc="upper right", fontsize=10)
 ax_d.grid(True, alpha=0.3, ls="--", zorder=0); ax_d.set_axisbelow(True)
 
@@ -253,8 +227,8 @@ fig.savefig(str(FIG) + ".pdf", bbox_inches="tight")
 plt.close(fig)
 print(f"Saved {FIG}.png/.pdf")
 print(f"\nStratum summary (panel a):")
-for lbl, n, pos, rate, action in zip(s_labels, s_n, s_pos, s_iod_rate, s_action):
-    print(f"  {lbl:<14s}  n={n:>7,d}  IoD+={pos:>4d}  rate={rate:5.2f}%   {action}")
+for lbl, n, pos, rate in zip(s_labels, s_n, s_pos, s_iod_rate):
+    print(f"  {lbl:<14s}  n={n:>7,d}  IoD+={pos:>4d}  rate={rate:5.2f}%")
 print(f"\nDiscordance summary (panel b):")
 for c in cells:
     print(f"  {c['asa_lbl']} & {c['port_lbl']:<11s}  n={c['n']:>7,d}  IoD+={c['pos']:>4d}  rate={c['rate']:5.2f}%")
