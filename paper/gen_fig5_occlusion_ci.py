@@ -73,9 +73,19 @@ CATEGORIES = [
     "Lines/Drains (LDA)", "Vital Signs",
 ]
 
+# OR_ENTRY positional cursor confounds the Surgical Context mask: masking the
+# full ENCOUNTER//AN// prefix replaces the prediction-cursor token with PAD,
+# producing an artifactual hidden-state collapse at position -1 unrelated to
+# surgical-context content. We therefore substitute the SC mask with the
+# OR_ENTRY-excluded variant from experiments/vocab/slurm_orentry_artifact.sh.
+ORENTRY_DIR = Path(str(PRED_DIR).replace("per_patient_occlusion", "orentry_artifact"))
+OVERRIDES = {
+    "Surgical Context (ENCOUNTER)": ORENTRY_DIR / "predictions_sc_minus_or_entry.parquet",
+}
+
 rows = []
 for cat in CATEGORIES:
-    fp = PRED_DIR / f"predictions_{safe(cat)}.parquet"
+    fp = OVERRIDES.get(cat, PRED_DIR / f"predictions_{safe(cat)}.parquet")
     if not fp.exists():
         continue
     df_m = pd.read_parquet(fp)
