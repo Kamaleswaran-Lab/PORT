@@ -112,7 +112,7 @@ print("PORT bootstrap 95% CIs computed for all windows.")
 # Colour scheme aligned with the ROC/PR figure
 STYLES = {
     "PORT":       dict(color="#1F3A5F", lw=2.4, ls="-",  marker="D", ms=7),
-    "BiLSTM":     dict(color="#9467BD", lw=1.8, ls="-",  marker="^", ms=7),
+    "BiLSTM":     dict(color="#E67E22", lw=1.8, ls="-",  marker="^", ms=7),
     "XGB (MEDS)": dict(color="#2A9199", lw=1.3, ls="--", marker="s", ms=6),
     "LR (MEDS)":  dict(color="#2E864D", lw=1.3, ls="--", marker="o", ms=6),
 }

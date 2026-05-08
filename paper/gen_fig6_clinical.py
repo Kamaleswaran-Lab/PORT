@@ -47,7 +47,7 @@ rcParams.update({
 })
 
 PORT_BLUE = "#1F3A5F"
-LSTM_PURPLE = "#9467BD"
+LSTM_ORANGE = "#E67E22"
 RED       = "#C0392B"
 GRAY      = "#888888"
 GREEN     = "#2E864D"
@@ -114,7 +114,7 @@ lstm_rates = []
 for lo, hi, *_ in strata:
     sub = (p_lstm >= lo) & (p_lstm < hi)
     lstm_rates.append(100 * y_lstm[sub].mean() if sub.sum() > 0 else 0.0)
-ax_a.plot(x, lstm_rates, "-^", color=LSTM_PURPLE, lw=1.6, ms=8, mec="white",
+ax_a.plot(x, lstm_rates, "-^", color=LSTM_ORANGE, lw=1.6, ms=8, mec="white",
           mew=0.8, label="BiLSTM (same thresholds)", zorder=5)
 
 ax_a.set_xticks(x); ax_a.set_xticklabels(s_labels, fontsize=10)
@@ -223,7 +223,7 @@ cum_cap_l = np.cumsum(y_l_sorted) / P_l
 cum_pop_l = (np.arange(N_l) + 1) / N_l
 
 ax_d.plot(cum_pop * 100, cum_cap * 100, color=PORT_BLUE, lw=2.4, label="PORT")
-ax_d.plot(cum_pop_l * 100, cum_cap_l * 100, color=LSTM_PURPLE, lw=1.8, ls="-",
+ax_d.plot(cum_pop_l * 100, cum_cap_l * 100, color=LSTM_ORANGE, lw=1.8, ls="-",
           label="BiLSTM")
 ax_d.plot([0, 100], [0, 100], color="0.55", lw=1.0, ls="--", label="Random ranking")
 

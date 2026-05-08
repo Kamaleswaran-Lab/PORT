@@ -71,7 +71,7 @@ models["PORT"]         = load_pred(R_RESULTS / "ethos_finetune_lora_test_predict
 # ── Visual encoding ───────────────────────────────────────────────────────────
 STYLES = {
     "PORT":         dict(color="#1F3A5F", lw=2.4, ls="-"),
-    "BiLSTM":       dict(color="#9467BD", lw=1.8, ls="-"),
+    "BiLSTM":       dict(color="#E67E22", lw=1.8, ls="-"),
     "XGB (MEDS)":   dict(color="#2A9199", lw=1.3, ls="--"),
     "LR (MEDS)":    dict(color="#2E864D", lw=1.3, ls="--"),
     "XGB (manual)": dict(color="#B5651D", lw=1.1, ls=":"),
@@ -188,7 +188,7 @@ for name in roc_order:
     # Shade only headline models to avoid visual clutter; use a higher alpha
     # plus a thin boundary edge so the band is clearly visible at print size.
     if name in ("PORT", "BiLSTM"):
-        ax_roc.fill_between(fg, tlo, thi, color=s["color"], alpha=0.30, lw=0, zorder=1)
+        ax_roc.fill_between(fg, tlo, thi, color=s["color"], alpha=0.18, lw=0, zorder=1)
         ax_roc.plot(fg, tlo, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
         ax_roc.plot(fg, thi, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
     ax_roc.plot(fpr, tpr, label=f"{name}  ({auc:.3f})", **s)
@@ -206,7 +206,7 @@ for name in pr_order:
     rg, plo, phi = pr_envelope[name]
     s = STYLES[name]
     if name in ("PORT", "BiLSTM"):
-        ax_pr.fill_between(rg, plo, phi, color=s["color"], alpha=0.30, lw=0, zorder=1)
+        ax_pr.fill_between(rg, plo, phi, color=s["color"], alpha=0.18, lw=0, zorder=1)
         ax_pr.plot(rg, plo, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
         ax_pr.plot(rg, phi, color=s["color"], lw=0.6, alpha=0.6, zorder=2)
     ax_pr.plot(rec, prec, label=f"{name}  ({auprc:.3f})", **s)

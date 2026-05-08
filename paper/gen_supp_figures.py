@@ -14,7 +14,7 @@ Shared style:
   Light major (0.85) + minor (0.92) gridlines
   Framed legend (white, thin gray border, no metric title)
   Bold panel title on top; bold (a/b/c) panel labels for multi-panel
-  PORT in deep navy (#1F3A5F), BiLSTM purple (#9467BD), conventional
+  PORT in deep navy (#1F3A5F), BiLSTM purple (#E67E22), conventional
   baselines in muted teal/green/orange
 """
 from pathlib import Path
@@ -62,7 +62,7 @@ rcParams.update({
 })
 
 STYLE_PORT  = dict(color="#1F3A5F", lw=2.4)
-STYLE_LSTM  = dict(color="#9467BD", lw=1.8)
+STYLE_LSTM  = dict(color="#E67E22", lw=1.8)
 STYLE_XGB   = dict(color="#2A9199", lw=1.3, ls="--")
 STYLE_LR    = dict(color="#2E864D", lw=1.3, ls="--")
 STYLE_ASA   = dict(color="#C0392B", lw=1.1, ls="-.")
