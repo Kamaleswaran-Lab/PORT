@@ -37,7 +37,10 @@ from baselines.features import load_task, load_events, load_splits
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
-DEFAULT_OUTPUT_DIR = Path("/path/to/CHD_MEDS/results/baselines")
+import os
+DEFAULT_OUTPUT_DIR = Path(
+    os.environ.get("CHD_DATA_ROOT", "/path/to/CHD_MEDS")
+) / "results" / "baselines"
 
 MAX_SEQ_LEN   = 512
 VOCAB_SIZE    = 2000   # top-N codes from train set

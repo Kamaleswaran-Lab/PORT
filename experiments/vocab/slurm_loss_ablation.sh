@@ -22,6 +22,7 @@ set -e
 cd /path/to/CHDLLM
 export PATH=/path/to/miniforge3/envs/ethos/bin:$PATH
 export PYTHONPATH=/path/to/CHDLLM/ethos-ares/src:$PYTHONPATH
+export CHD_DATA_ROOT=/path/to/CHD_MEDS
 
 SEED=123
 MODEL_FP=/path/to/CHD_MEDS/tokenized_v4/models/chd_v4_layer6_do0.3/best_model.pt

@@ -39,9 +39,11 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-SPLITS_PATH = Path("/path/to/CHD_MEDS/splits/splits.parquet")
-EVENTS_PATH = Path("/path/to/CHD_MEDS/merged/events.parquet")
-TASK_PATH   = Path("/path/to/CHD_MEDS/outcome/iod_task.parquet")
+import os
+_CHD_DATA_ROOT = Path(os.environ.get("CHD_DATA_ROOT", "/path/to/CHD_MEDS"))
+SPLITS_PATH = _CHD_DATA_ROOT / "splits"  / "splits.parquet"
+EVENTS_PATH = _CHD_DATA_ROOT / "merged"  / "events.parquet"
+TASK_PATH   = _CHD_DATA_ROOT / "outcome" / "iod_task.parquet"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ set -e
 cd /path/to/CHDLLM
 export PATH=/path/to/miniforge3/envs/ethos/bin:$PATH
 export PYTHONPATH=/path/to/CHDLLM/ethos-ares/src:$PYTHONPATH
+export CHD_DATA_ROOT=/path/to/CHD_MEDS
 
 FRACS=(0.01 0.05 0.10 0.25 0.50)
 F=${FRACS[$SLURM_ARRAY_TASK_ID]}

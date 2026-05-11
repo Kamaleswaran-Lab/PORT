@@ -17,6 +17,7 @@ set -e
 cd /path/to/CHDLLM
 export PATH=/path/to/miniforge3/envs/ethos/bin:$PATH
 export PYTHONPATH=/path/to/CHDLLM/ethos-ares/src:$PYTHONPATH
+export CHD_DATA_ROOT=/path/to/CHD_MEDS
 
 echo "Quantile-pairing ablation: mask all Q1-Q10 tokens at inference"
 
