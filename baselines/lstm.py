@@ -266,6 +266,8 @@ def main():
     parser.add_argument("--output_dir",  type=str,   default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--window_days", type=int,   default=None,
                         help="Context window in days before OR entry (None=all)")
+    parser.add_argument("--train_frac",  type=float, default=1.0,
+                        help="Stratified subsample fraction of training set (1.0=all)")
     parser.add_argument("--suffix",      type=str,   default="",
                         help="Suffix for output filenames (e.g., _window_30d)")
     parser.add_argument("--seed",        type=int,   default=None,
@@ -303,6 +305,20 @@ def main():
     train_task = task[task["split"] == "train"].reset_index(drop=True)
     val_task   = task[task["split"] == "val"].reset_index(drop=True)
     test_task  = task[task["split"] == "test"].reset_index(drop=True)
+
+    # Stratified subsample of training set (data-efficiency ablation)
+    if args.train_frac < 1.0:
+        rng_sub = np.random.RandomState(args.seed if args.seed is not None else 42)
+        pos = train_task[train_task["boolean_value"] == True]
+        neg = train_task[train_task["boolean_value"] == False]
+        n_pos_keep = max(1, int(round(len(pos) * args.train_frac)))
+        n_neg_keep = max(1, int(round(len(neg) * args.train_frac)))
+        pos_keep = pos.sample(n=n_pos_keep, random_state=rng_sub).reset_index(drop=True)
+        neg_keep = neg.sample(n=n_neg_keep, random_state=rng_sub).reset_index(drop=True)
+        train_task = pd.concat([pos_keep, neg_keep], ignore_index=True).sample(
+            frac=1.0, random_state=rng_sub).reset_index(drop=True)
+        log.info(f"  Subsampled train to {args.train_frac*100:.1f}%: "
+                 f"{n_pos_keep} pos + {n_neg_keep} neg = {len(train_task)} total")
 
     log.info(f"  Train: {len(train_task):,} | Val: {len(val_task):,} | Test: {len(test_task):,}")
     log.info(f"  Train IoD+: {train_task['boolean_value'].mean()*100:.1f}%")
@@ -342,7 +358,7 @@ def main():
 
     # Training loop
     best_val_auroc = 0.0
-    best_model_path = output_dir / "lstm_best.pt"
+    best_model_path = output_dir / f"lstm_best{args.suffix}.pt"
     results = []
 
     log.info("=== Training LSTM ===")
@@ -373,7 +389,8 @@ def main():
         })
 
     # Save training history
-    pd.DataFrame(results).to_csv(output_dir / "lstm_training_history.csv", index=False)
+    pd.DataFrame(results).to_csv(
+        output_dir / f"lstm_training_history{args.suffix}.csv", index=False)
 
     # Evaluate best model on test set
     log.info("\n=== Test Evaluation (best checkpoint) ===")

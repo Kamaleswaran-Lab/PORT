@@ -331,6 +331,21 @@ def main():
                         help="LoRA rank (default: 8)")
     parser.add_argument("--lora_alpha",  type=int,   default=16,
                         help="LoRA alpha scaling (default: 16)")
+    # ── Ablation flags (added 2026-05-11) ──
+    parser.add_argument("--train_frac",  type=float, default=1.0,
+                        help="Stratified subsample fraction of training set (1.0=all)")
+    parser.add_argument("--loss_type",   type=str,   default="weighted_bce",
+                        choices=["weighted_bce", "bce", "focal"],
+                        help="Loss function (weighted_bce=current, bce=unweighted, focal=alpha-balanced focal)")
+    parser.add_argument("--focal_gamma", type=float, default=2.0,
+                        help="Gamma exponent for focal loss")
+    parser.add_argument("--focal_alpha", type=float, default=0.25,
+                        help="Alpha class-balance weight for focal loss (1=positive class weight)")
+    parser.add_argument("--sampler",     type=str,   default="none",
+                        choices=["none", "oversample_pos", "undersample_neg"],
+                        help="Mini-batch sampling strategy")
+    parser.add_argument("--sampler_ratio", type=float, default=5.0,
+                        help="Oversample positive multiplier or undersample neg:pos ratio")
     args = parser.parse_args()
 
     # Override global paths if CLI args provided
@@ -399,19 +414,65 @@ def main():
     val_ds   = IoDFinetuneDataset(VAL_DIR,   n_positions, label_dict, window_days=args.window_days)
     test_ds  = IoDFinetuneDataset(TEST_DIR,  n_positions, label_dict, window_days=args.window_days)
 
-    if args.pos_weight is not None:
+    # ── Stratified subsample of training set (data-efficiency ablation) ──
+    if args.train_frac < 1.0:
+        rng = np.random.RandomState(args.seed if args.seed is not None else 42)
+        pos_idx = np.where(train_ds.labels == 1)[0]
+        neg_idx = np.where(train_ds.labels == 0)[0]
+        n_pos_keep = max(1, int(round(len(pos_idx) * args.train_frac)))
+        n_neg_keep = max(1, int(round(len(neg_idx) * args.train_frac)))
+        keep_pos = rng.choice(pos_idx, n_pos_keep, replace=False)
+        keep_neg = rng.choice(neg_idx, n_neg_keep, replace=False)
+        keep = np.sort(np.concatenate([keep_pos, keep_neg]))
+        train_ds.valid_indices = [train_ds.valid_indices[int(i)] for i in keep]
+        train_ds.labels = train_ds.labels[keep]
+        train_ds.pids   = train_ds.pids[keep]
+        train_ds.pts    = train_ds.pts[keep]
+        log.info(f"Subsampled train to {args.train_frac*100:.1f}%: "
+                 f"{n_pos_keep} pos + {n_neg_keep} neg = {len(keep)} total")
+
+    # ── Undersample negatives if requested ──
+    if args.sampler == "undersample_neg":
+        rng_u = np.random.RandomState(args.seed if args.seed is not None else 42)
+        pos_idx = np.where(train_ds.labels == 1)[0]
+        neg_idx = np.where(train_ds.labels == 0)[0]
+        n_neg_keep = min(len(neg_idx), int(round(len(pos_idx) * args.sampler_ratio)))
+        keep_neg = rng_u.choice(neg_idx, n_neg_keep, replace=False)
+        keep = np.sort(np.concatenate([pos_idx, keep_neg]))
+        train_ds.valid_indices = [train_ds.valid_indices[int(i)] for i in keep]
+        train_ds.labels = train_ds.labels[keep]
+        train_ds.pids   = train_ds.pids[keep]
+        train_ds.pts    = train_ds.pts[keep]
+        log.info(f"Undersampled neg to {args.sampler_ratio}:1 → "
+                 f"{len(pos_idx)} pos + {n_neg_keep} neg = {len(keep)} total")
+
+    # ── pos_weight policy ──
+    if args.loss_type == "bce":
+        pos_weight = th.tensor([1.0], dtype=th.float32, device=device)
+    elif args.pos_weight is not None:
         pos_weight = th.tensor([args.pos_weight], dtype=th.float32, device=device)
     else:
         pos_weight = th.tensor(
             [(train_ds.labels == 0).sum() / max((train_ds.labels == 1).sum(), 1)],
             dtype=th.float32, device=device,
         )
-    log.info(f"pos_weight: {pos_weight.item():.1f}")
+    log.info(f"loss_type={args.loss_type}, pos_weight={pos_weight.item():.1f}")
 
-    train_loader = DataLoader(
-        train_ds, batch_size=args.batch_size, shuffle=True,
-        num_workers=0, pin_memory="cuda" in device,
-    )
+    # ── Oversampling sampler (mutually exclusive with undersample, applied above) ──
+    if args.sampler == "oversample_pos":
+        from torch.utils.data import WeightedRandomSampler
+        weights = np.where(train_ds.labels == 1, args.sampler_ratio, 1.0).astype(np.float64)
+        sampler = WeightedRandomSampler(weights.tolist(), num_samples=len(weights), replacement=True)
+        train_loader = DataLoader(
+            train_ds, batch_size=args.batch_size, sampler=sampler,
+            num_workers=0, pin_memory="cuda" in device,
+        )
+        log.info(f"Oversampling positives {args.sampler_ratio}× via WeightedRandomSampler")
+    else:
+        train_loader = DataLoader(
+            train_ds, batch_size=args.batch_size, shuffle=True,
+            num_workers=0, pin_memory="cuda" in device,
+        )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch_size, shuffle=False,
         num_workers=0, pin_memory="cuda" in device,
@@ -426,7 +487,25 @@ def main():
     n_head_params = sum(p.numel() for p in head.parameters())
     log.info(f"Classification head: {n_head_params:,} trainable params")
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    if args.loss_type == "focal":
+        class FocalLoss(nn.Module):
+            def __init__(self, gamma: float, alpha: float):
+                super().__init__()
+                self.gamma = gamma
+                self.alpha = alpha
+            def forward(self, logits, targets):
+                bce = nn.functional.binary_cross_entropy_with_logits(
+                    logits, targets, reduction="none")
+                p  = th.sigmoid(logits)
+                pt = th.where(targets == 1, p, 1 - p)
+                a  = th.where(targets == 1,
+                              th.full_like(p, self.alpha),
+                              th.full_like(p, 1 - self.alpha))
+                return (a * (1 - pt).pow(self.gamma) * bce).mean()
+        criterion = FocalLoss(gamma=args.focal_gamma, alpha=args.focal_alpha)
+        log.info(f"FocalLoss(gamma={args.focal_gamma}, alpha={args.focal_alpha})")
+    else:
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     if args.full_finetune:
         optimizer = th.optim.AdamW(

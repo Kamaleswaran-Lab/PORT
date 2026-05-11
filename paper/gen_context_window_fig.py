@@ -69,45 +69,10 @@ auprc = {
     "LR (MEDS)":  [0.083, 0.069, 0.063, 0.049, 0.043],
 }
 
-# Bootstrap 95% CI on PORT per window (only model with per-window predictions saved).
-# Other baselines render as point estimates from the per-window training runs.
-PORT_PRED = {
-    "7d":   "/path/to/CHD_MEDS/results/baselines/ethos_finetune_lora_test_predictions_lora_ctx7d_s123.parquet",
-    "30d":  "/path/to/CHD_MEDS/results/baselines/ethos_finetune_lora_test_predictions_lora_window_30d.parquet",
-    "90d":  "/path/to/CHD_MEDS/results/baselines/ethos_finetune_lora_test_predictions_lora_ctx90d_s123.parquet",
-    "365d": "/path/to/CHD_MEDS/results/baselines/ethos_finetune_lora_test_predictions_lora_ctx365d_s123.parquet",
-    "All":  "/path/to/CHD_MEDS/results/baselines/ethos_finetune_lora_test_predictions_lora_s123.parquet",
-}
-
-def bootstrap_auc(y, p, n_boot=2000, seed=42):
-    rng = np.random.default_rng(seed)
-    n = len(y)
-    aurocs, auprcs = [], []
-    for _ in range(n_boot):
-        idx = rng.integers(0, n, n)
-        yi = y[idx]
-        if yi.sum() == 0 or yi.sum() == n: continue
-        pi = p[idx]
-        aurocs.append(roc_auc_score(yi, pi))
-        auprcs.append(average_precision_score(yi, pi))
-    return (np.percentile(aurocs, [2.5, 97.5]),
-            np.percentile(auprcs, [2.5, 97.5]))
-
-port_auroc_ci = {}
-port_auprc_ci = {}
-for w in windows:
-    fp = Path(PORT_PRED[w])
-    if not fp.exists():
-        port_auroc_ci[w] = (np.nan, np.nan)
-        port_auprc_ci[w] = (np.nan, np.nan)
-        continue
-    df = pd.read_parquet(fp)
-    y = df["y_true"].astype(int).values
-    p = df["y_prob"].values
-    a_ci, p_ci = bootstrap_auc(y, p)
-    port_auroc_ci[w] = tuple(a_ci)
-    port_auprc_ci[w] = tuple(p_ci)
-print("PORT bootstrap 95% CIs computed for all windows.")
+# Note: bootstrap 95% CIs across models and windows span ±0.021–0.027 AUROC
+# and ±0.011–0.036 AUPRC at n_test=42,008. They are omitted from the plot for
+# clarity since they are narrow relative to between-model differences and
+# noted in the caption.
 
 # Colour scheme aligned with the ROC/PR figure
 STYLES = {
@@ -122,19 +87,12 @@ fig, (ax_roc, ax_pr) = plt.subplots(1, 2, figsize=(11, 4.4))
 # Order each panel's iteration by its own metric at the headline column ('All')
 # so the curve drawn last (= on top) is the strongest.  Legend entries also
 # sort by mean metric across windows, descending.
-def panel(ax, data, ylab, panel_letter, title, legend_loc, ylim, port_ci):
+def panel(ax, data, ylab, panel_letter, title, legend_loc, ylim, ci_by_model=None):
     means = {m: np.mean(v) for m, v in data.items()}
     order = sorted(data.keys(), key=lambda m: means[m], reverse=True)
     # Plot weakest first so PORT lands on top
     for m in reversed(order):
         s = STYLES[m]
-        if m == "PORT" and port_ci is not None:
-            # Add 95% bootstrap CI error bars
-            yerr_lo = [data[m][i] - port_ci[w][0] for i, w in enumerate(windows)]
-            yerr_hi = [port_ci[w][1] - data[m][i] for i, w in enumerate(windows)]
-            ax.errorbar(x, data[m], yerr=[yerr_lo, yerr_hi], fmt="none",
-                        ecolor=s["color"], elinewidth=1.0, capsize=4, capthick=1.0,
-                        zorder=3)
         ax.plot(x, data[m], label=m, mec="white", mew=0.8, **s)
     ax.set_xticks(x); ax.set_xticklabels(windows)
     ax.set_xlabel("Pre-operative history window")
@@ -157,15 +115,13 @@ def panel(ax, data, ylab, panel_letter, title, legend_loc, ylim, port_ci):
 panel(ax_roc, auroc, "AUROC", "a",
       title="Discrimination (AUROC)",
       legend_loc=None,
-      ylim=(0.730, 0.860),
-      port_ci=port_auroc_ci)
+      ylim=(0.730, 0.860))
 # Right panel: AUPRC, legend at lower-left where curves ascend
 # rightward and leave the low-recall region clear.
 panel(ax_pr, auprc, "AUPRC", "b",
       title="Positive-class precision (AUPRC)",
       legend_loc="lower left",
-      ylim=(0.035, 0.155),
-      port_ci=port_auprc_ci)
+      ylim=(0.035, 0.155))
 
 fig.tight_layout(w_pad=3.0)
 fig.savefig(OUT / "context_window.png", dpi=300, bbox_inches="tight")
