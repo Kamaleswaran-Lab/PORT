@@ -17,7 +17,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
-#SBATCH --time=8:00:00
+#SBATCH --time=16:00:00
 #SBATCH --output=/path/to/CHD_MEDS/results_v4/slurm_hp_grid_%A_%a.log
 #SBATCH --error=/path/to/CHD_MEDS/results_v4/slurm_hp_grid_%A_%a.err
 #SBATCH --array=0-19
@@ -60,6 +60,7 @@ python ethos/finetune.py \
     --train_dir $TOK/train --val_dir $TOK/val --test_dir $TOK/test \
     --results_dir $RESULTS \
     --seed $SEED \
+    --epochs 15 --patience 5 \
     --lr 1e-3 --hidden_dim 256 --head_dropout 0.1 \
     --lora --lora_r $R --lora_alpha $A \
     $LA \
