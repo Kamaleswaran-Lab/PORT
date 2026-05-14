@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 
-PORT = Path("/path/to/CHD_MEDS/results_v4/baselines/ethos_finetune_lora_test_predictions_v4_lora_s123.parquet")
+PORT = Path("/path/to/CHD_MEDS/results_v4/baselines/ethos_finetune_lora_test_predictions_v4_lora_r8_bce_s456.parquet")
 FIG  = Path("paper/overleaf/figures/patient_mechanism")
 
 rcParams.update({

@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 
-CASE_JSON = Path("/path/to/CHD_MEDS/results_v4/evaluation/case_examples_r8bce/case_examples.json")
+CASE_JSON = Path("/path/to/CHD_MEDS/results_v4/evaluation/case_examples_r8bce_s456/case_examples.json")
 FIG       = Path("paper/overleaf/figures/case_examples")
 
 rcParams.update({

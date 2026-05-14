@@ -78,7 +78,7 @@ print("wrote context_window")
 
 # ── Figure 2: Seed-ensemble uncertainty ──────────────────────────────────────
 base = Path("/path/to/CHD_MEDS/results/baselines")
-dfs = [pd.read_parquet(base / f"ethos_finetune_lora_test_predictions_lora_s{s}.parquet")
+dfs = [pd.read_parquet(base / f"ethos_finetune_lora_test_predictions_v4_lora_r8_bce_s{s}.parquet")
        for s in [42, 123, 456]]
 # Align by subject_id
 pid = dfs[0]["subject_id"] if "subject_id" in dfs[0].columns else dfs[0].index

@@ -91,7 +91,7 @@ def panel_letter(ax, letter, dx=-0.13, dy=1.04):
 df_d  = pd.read_parquet(R_BASE / "test_preds_meds.parquet")
 df_l  = pd.read_parquet(R_BASE / "lstm_test_predictions.parquet")
 df_a  = pd.read_parquet(R_BASE / "asa_test_predictions.parquet")
-df_p  = pd.read_parquet(R_RESULTS / "ethos_finetune_lora_test_predictions_lora_s123.parquet")
+df_p  = pd.read_parquet(R_RESULTS / "ethos_finetune_lora_test_predictions_v4_lora_r8_bce_s456.parquet")
 
 models = {
     "PORT":       (df_p.y_true.astype(int).values, df_p.y_prob.values),
@@ -159,7 +159,7 @@ def fig_subgroup_asa():
                       left_on=["sid", "encounter_csn"],
                       right_on=["sid", "enc_csn"], how="left")
 
-    df = pd.read_parquet(R_RESULTS / "ethos_finetune_lora_test_predictions_lora_s123.parquet")
+    df = pd.read_parquet(R_RESULTS / "ethos_finetune_lora_test_predictions_v4_lora_r8_bce_s456.parquet")
     df["prediction_time"] = pd.to_datetime(df.prediction_time_us, unit="us")
     df = df.merge(task[["sid", "prediction_time", "asa"]],
                   left_on=["subject_id", "prediction_time"],

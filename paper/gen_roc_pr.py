@@ -66,7 +66,7 @@ models["LR (MEDS)"]    = (df_d.y_true.astype(int).values, df_d.prob_lr_meds.valu
 models["XGB (MEDS)"]   = (df_d.y_true.astype(int).values, df_d.prob_xgb_meds.values)
 models["ASA score"]    = load_pred(R_BASE / "asa_test_predictions.parquet")
 models["BiLSTM"]       = load_pred(R_NEW / "lstm_tuned_test_predictions.parquet")
-models["PORT"]         = load_pred(R_RESULTS / "ethos_finetune_lora_test_predictions_lora_s123.parquet")
+models["PORT"]         = load_pred(R_RESULTS / "ethos_finetune_lora_test_predictions_v4_lora_r8_bce_s456.parquet")
 
 # ── Visual encoding ───────────────────────────────────────────────────────────
 STYLES = {
@@ -137,12 +137,12 @@ seed_aurocs = {}
 seed_auprcs = {}
 port_with_csn = None
 for seed in [42, 123, 456]:
-    df = pd.read_parquet(R_RESULTS / f"ethos_finetune_lora_test_predictions_lora_s{seed}.parquet")
+    df = pd.read_parquet(R_RESULTS / f"ethos_finetune_lora_test_predictions_v4_lora_r8_bce_s{seed}.parquet")
     y = df.y_true.astype(int).values
     p = df.y_prob.values
     seed_aurocs[seed] = roc_auc_score(y, p)
     seed_auprcs[seed] = average_precision_score(y, p)
-    if seed == 123:
+    if seed == 456:
         # Add encounter_csn for join with LSTM
         merged = df.merge(
             task[["subject_id_int", "prediction_time_us", "encounter_csn"]].rename(
