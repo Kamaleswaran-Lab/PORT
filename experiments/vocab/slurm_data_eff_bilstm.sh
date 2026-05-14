@@ -36,6 +36,7 @@ python baselines/lstm.py \
     --seed $SEED \
     --epochs 20 --batch_size 64 --lr 1e-3 \
     --train_frac $F \
-    --suffix _frac${TAG}_s${SEED}
+    --unweighted \
+    --suffix _unweighted_frac${TAG}_s${SEED}
 
 echo "=== Done BiLSTM frac=${F} ==="
