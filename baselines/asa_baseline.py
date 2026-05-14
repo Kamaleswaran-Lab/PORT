@@ -30,8 +30,10 @@ from baselines.features import load_task, load_splits
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
-EVENTS_PATH    = Path("/path/to/CHD_MEDS/merged/events.parquet")
-OUTPUT_DIR     = Path("/path/to/CHD_MEDS/results/baselines")
+import os
+_CHD_DATA_ROOT = Path(os.environ.get("CHD_DATA_ROOT", "/path/to/CHD_MEDS"))
+EVENTS_PATH    = _CHD_DATA_ROOT / "merged" / "events.parquet"
+OUTPUT_DIR     = _CHD_DATA_ROOT / "results" / "baselines"
 SUMMARY_PATH   = OUTPUT_DIR / "results_summary.csv"
 ASA_CODE       = "ENCOUNTER//AN//ASA_SCORE"
 
@@ -102,7 +104,7 @@ def evaluate(y_true, y_prob, split, model_name):
             "brier": brier, "n_total": n_tot, "n_positive": n_pos}
 
 
-def main():
+def main(unweighted: bool = False, suffix: str = ""):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     task   = load_task()
@@ -123,22 +125,24 @@ def main():
     X_test  = test[["asa_score"]].values
     y_test  = test["boolean_value"].values
 
-    # Logistic regression — simple calibrated probability from ASA score
-    model = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)
+    cw = None if unweighted else "balanced"
+    log.info(f"  class_weight={cw} (unweighted={unweighted})")
+    model = LogisticRegression(class_weight=cw, max_iter=1000, random_state=42)
     model.fit(X_train, y_train)
     log.info(f"  ASA coef={model.coef_[0][0]:.4f}, intercept={model.intercept_[0]:.4f}")
 
     results = []
+    model_name = "ASA (clinical, unweighted)" if unweighted else "ASA (clinical)"
     for X, y, split_name in [(X_train, y_train, "train"), (X_val, y_val, "val"), (X_test, y_test, "test")]:
         y_prob = model.predict_proba(X)[:, 1]
-        results.append(evaluate(y, y_prob, split_name, "ASA (clinical)"))
+        results.append(evaluate(y, y_prob, split_name, model_name))
 
     # Save test predictions
     y_prob_test = model.predict_proba(X_test)[:, 1]
     pred_df = test[["subject_id", "encounter_csn", "boolean_value"]].copy()
     pred_df = pred_df.rename(columns={"boolean_value": "y_true"})
     pred_df["y_prob"] = y_prob_test
-    out_path = OUTPUT_DIR / "asa_test_predictions.parquet"
+    out_path = OUTPUT_DIR / f"asa_test_predictions{suffix}.parquet"
     pred_df.to_parquet(out_path, index=False)
     log.info(f"  Saved test predictions → {out_path}")
 
@@ -156,4 +160,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--unweighted", action="store_true",
+                   help="Disable class_weight='balanced' (use unweighted log-loss)")
+    p.add_argument("--suffix", default="", help="Output filename suffix")
+    a = p.parse_args()
+    main(unweighted=a.unweighted, suffix=a.suffix)
