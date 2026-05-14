@@ -73,6 +73,7 @@ def run_feature_set(
     output_dir: Path,
     window_days: int | None = None,
     suffix: str = "",
+    unweighted: bool = False,
 ) -> list[dict]:
 
     log.info(f"\n{'='*60}")
@@ -115,7 +116,7 @@ def run_feature_set(
         ("scaler",  StandardScaler()),
         ("clf",     LogisticRegression(
             max_iter=1000,
-            class_weight="balanced",
+            class_weight=None if unweighted else "balanced",
             solver="lbfgs",
             C=0.1,
         )),
@@ -140,7 +141,7 @@ def run_feature_set(
 
     # ── XGBoost ─────────────────────────────────────────────────────────────
     log.info("Training XGBoost …")
-    scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+    scale_pos_weight = 1.0 if unweighted else (y_train == 0).sum() / (y_train == 1).sum()
 
     xgb_model = xgb.XGBClassifier(
         n_estimators=500,
@@ -199,7 +200,8 @@ def run_feature_set(
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-def main(feature_sets: list[str], output_dir: Path, window_days: int | None = None, suffix: str = ""):
+def main(feature_sets: list[str], output_dir: Path, window_days: int | None = None,
+         suffix: str = "", unweighted: bool = False):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log.info("Loading data …")
@@ -210,7 +212,7 @@ def main(feature_sets: list[str], output_dir: Path, window_days: int | None = No
     all_results = []
     for fs in feature_sets:
         res = run_feature_set(fs, task, events, splits, output_dir,
-                              window_days=window_days, suffix=suffix)
+                              window_days=window_days, suffix=suffix, unweighted=unweighted)
         all_results.extend(res)
 
     # Summary table
@@ -234,8 +236,10 @@ if __name__ == "__main__":
                         help="Context window in days before OR entry (None=all history)")
     parser.add_argument("--suffix", default="",
                         help="Suffix for output filenames (e.g., _window_30d)")
+    parser.add_argument("--unweighted", action="store_true",
+                        help="Disable class re-weighting (class_weight=None for LR; scale_pos_weight=1 for XGB)")
     args = parser.parse_args()
 
     feature_sets = ["manual", "meds"] if args.feature_set == "both" else [args.feature_set]
     main(feature_sets, Path(args.output_dir),
-         window_days=args.window_days, suffix=args.suffix)
+         window_days=args.window_days, suffix=args.suffix, unweighted=args.unweighted)

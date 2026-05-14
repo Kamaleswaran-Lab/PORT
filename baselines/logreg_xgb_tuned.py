@@ -75,19 +75,20 @@ def evaluate(y_true, y_prob, split, model_name):
 
 # ── LR tuning ─────────────────────────────────────────────────────────────────
 
-def tune_lr(X_train, y_train, X_val, y_val, feature_set):
-    log.info("Tuning Logistic Regression …")
+def tune_lr(X_train, y_train, X_val, y_val, feature_set, unweighted=False):
+    log.info(f"Tuning Logistic Regression (unweighted={unweighted}) …")
     C_grid = [1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0]
     best_auprc = -1.0
     best_C = None
     best_pipe = None
+    cw = None if unweighted else "balanced"
 
     for C in C_grid:
         pipe = Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
             ("scaler",  StandardScaler()),
             ("clf",     LogisticRegression(
-                max_iter=2000, class_weight="balanced",
+                max_iter=2000, class_weight=cw,
                 solver="lbfgs", C=C,
             )),
         ])
@@ -118,10 +119,10 @@ def sample_xgb_params(rng):
     }
 
 
-def tune_xgb(X_train, y_train, X_val, y_val, feature_set, n_trials, seed):
-    log.info(f"Tuning XGBoost (random search, {n_trials} trials) …")
+def tune_xgb(X_train, y_train, X_val, y_val, feature_set, n_trials, seed, unweighted=False):
+    log.info(f"Tuning XGBoost (random search, {n_trials} trials, unweighted={unweighted}) …")
     rng = np.random.default_rng(seed)
-    scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+    scale_pos_weight = 1.0 if unweighted else (y_train == 0).sum() / (y_train == 1).sum()
 
     # Pre-impute (XGB handles NaN natively but be consistent)
     imputer = SimpleImputer(strategy="median")
@@ -181,6 +182,8 @@ def run_feature_set(
     output_dir: Path,
     n_trials: int,
     seed: int,
+    unweighted: bool = False,
+    suffix: str = "_tuned",
 ):
     log.info("\n" + "=" * 70)
     log.info(f"Feature set: {feature_set.upper()}")
@@ -213,14 +216,14 @@ def run_feature_set(
     results = []
 
     # ── LR ─────────────────────────────────────────────────────────────────────
-    lr_best, lr_meta = tune_lr(X_train, y_train, X_val, y_val, feature_set)
+    lr_best, lr_meta = tune_lr(X_train, y_train, X_val, y_val, feature_set, unweighted=unweighted)
     for split_name, X_s, y_s in [("val", X_val, y_val), ("test", X_test, y_test)]:
         prob = lr_best.predict_proba(X_s)[:, 1]
         results.append(evaluate(y_s.values, prob, split_name, f"LogReg_{feature_set}"))
 
     # ── XGB ────────────────────────────────────────────────────────────────────
     xgb_best, imputer, xgb_meta = tune_xgb(X_train, y_train, X_val, y_val, feature_set,
-                                            n_trials=n_trials, seed=seed)
+                                            n_trials=n_trials, seed=seed, unweighted=unweighted)
     X_val_imp = imputer.transform(X_val)
     X_test_imp = imputer.transform(X_test)
     for split_name, X_s, y_s in [("val", X_val_imp, y_val), ("test", X_test_imp, y_test)]:
@@ -236,17 +239,18 @@ def run_feature_set(
         f"prob_lr_{feature_set}":  lr_best.predict_proba(X_test)[:, 1],
         f"prob_xgb_{feature_set}": xgb_best.predict_proba(X_test_imp)[:, 1],
     })
-    test_preds.to_parquet(output_dir / f"test_preds_{feature_set}_tuned.parquet", index=False)
+    test_preds.to_parquet(output_dir / f"test_preds_{feature_set}{suffix}.parquet", index=False)
 
     # ── Save best hyperparameters ──────────────────────────────────────────────
-    meta = {"feature_set": feature_set, "lr": lr_meta, "xgb": xgb_meta, "seed": seed}
-    with open(output_dir / f"best_hparams_{feature_set}.json", "w") as f:
+    meta = {"feature_set": feature_set, "lr": lr_meta, "xgb": xgb_meta, "seed": seed,
+            "unweighted": unweighted}
+    with open(output_dir / f"best_hparams_{feature_set}{suffix}.json", "w") as f:
         json.dump(meta, f, indent=2, default=str)
 
     return results
 
 
-def main(feature_sets, output_dir, n_trials, seed):
+def main(feature_sets, output_dir, n_trials, seed, unweighted=False, suffix="_tuned"):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log.info("Loading data …")
@@ -256,7 +260,8 @@ def main(feature_sets, output_dir, n_trials, seed):
 
     all_results = []
     for fs in feature_sets:
-        all_results.extend(run_feature_set(fs, task, events, splits, output_dir, n_trials, seed))
+        all_results.extend(run_feature_set(fs, task, events, splits, output_dir, n_trials, seed,
+                                           unweighted=unweighted, suffix=suffix))
 
     df = pd.DataFrame(all_results)
     df = df.sort_values(["split", "auroc"], ascending=[True, False])
@@ -271,7 +276,12 @@ if __name__ == "__main__":
     parser.add_argument("--xgb_trials", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output_dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--unweighted", action="store_true",
+                        help="Disable class re-weighting (class_weight=None for LR; scale_pos_weight=1 for XGB)")
+    parser.add_argument("--suffix", default="_tuned",
+                        help="Suffix for output filenames (e.g., _unweighted_tuned)")
     args = parser.parse_args()
 
     feature_sets = ["manual", "meds"] if args.feature_set == "both" else [args.feature_set]
-    main(feature_sets, Path(args.output_dir), args.xgb_trials, args.seed)
+    main(feature_sets, Path(args.output_dir), args.xgb_trials, args.seed,
+         unweighted=args.unweighted, suffix=args.suffix)

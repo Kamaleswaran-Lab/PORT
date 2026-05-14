@@ -165,6 +165,10 @@ def main():
     parser.add_argument("--max_seq_len", type=int, default=MAX_SEQ_LEN)
     parser.add_argument("--seed",       type=int, default=42)
     parser.add_argument("--output_dir", type=str, default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--unweighted", action="store_true",
+                        help="Disable pos_weight in BCE loss (uses standard unweighted BCE)")
+    parser.add_argument("--suffix", type=str, default="_tuned",
+                        help="Suffix for output filenames")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -190,7 +194,7 @@ def main():
     # Vocab + datasets (shared across all configs)
     log.info("Building code vocabulary …")
     code_vocab = build_code_vocab(events, train_task, top_n=VOCAB_SIZE)
-    with open(output_dir / "lstm_tuned_code_vocab.pkl", "wb") as f:
+    with open(output_dir / f"lstm{args.suffix}_code_vocab.pkl", "wb") as f:
         pickle.dump(code_vocab, f)
 
     log.info("Building datasets …")
@@ -199,8 +203,12 @@ def main():
     test_ds  = IoDSequenceDataset(test_task,  events, code_vocab, args.max_seq_len)
 
     pos_rate = train_task["boolean_value"].mean()
-    pos_weight = torch.tensor([(1 - pos_rate) / pos_rate], dtype=torch.float, device=device)
-    log.info(f"  pos_weight: {pos_weight.item():.1f}x")
+    if args.unweighted:
+        pos_weight = torch.tensor([1.0], dtype=torch.float, device=device)
+        log.info(f"  pos_weight: 1.0 (unweighted BCE)")
+    else:
+        pos_weight = torch.tensor([(1 - pos_rate) / pos_rate], dtype=torch.float, device=device)
+        log.info(f"  pos_weight: {pos_weight.item():.1f}x")
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                               collate_fn=collate_fn, num_workers=4, pin_memory=True)
@@ -215,7 +223,7 @@ def main():
         log.info(f"\n{'='*70}")
         log.info(f"[{i}/{len(CONFIGS)}] Config: {cfg['name']}")
         log.info(f"{'='*70}")
-        ckpt_path = output_dir / f"lstm_tuned_ckpt_{cfg['name']}.pt"
+        ckpt_path = output_dir / f"lstm{args.suffix}_ckpt_{cfg['name']}.pt"
         try:
             res = train_one_config(
                 cfg, train_loader, val_loader, test_loader, device, pos_weight,
@@ -249,7 +257,7 @@ def main():
         })
 
     summary_df = pd.DataFrame(summary_rows)
-    summary_df.to_csv(output_dir / "lstm_tuned_summary.csv", index=False)
+    summary_df.to_csv(output_dir / f"lstm{args.suffix}_summary.csv", index=False)
 
     log.info(f"\n→ Best: {best['config']['name']}")
     log.info(f"  Test AUROC={best['test_auroc']:.4f} AUPRC={best['test_auprc']:.4f}")
@@ -262,9 +270,9 @@ def main():
         "y_true":        best["test_labels"].astype(int),
         "y_prob":        best["test_probs"],
     })
-    pred_df.to_parquet(output_dir / "lstm_tuned_test_predictions.parquet", index=False)
+    pred_df.to_parquet(output_dir / f"lstm{args.suffix}_test_predictions.parquet", index=False)
 
-    with open(output_dir / "lstm_tuned_best.json", "w") as f:
+    with open(output_dir / f"lstm{args.suffix}_best.json", "w") as f:
         json.dump({
             "best_config": best["config"],
             "best_epoch": best["best_epoch"],

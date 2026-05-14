@@ -271,6 +271,8 @@ def main():
                         help="Context window in days before OR entry (None=all)")
     parser.add_argument("--train_frac",  type=float, default=1.0,
                         help="Stratified subsample fraction of training set (1.0=all)")
+    parser.add_argument("--unweighted",  action="store_true",
+                        help="Disable pos_weight in BCE loss (uses standard unweighted BCE)")
     parser.add_argument("--suffix",      type=str,   default="",
                         help="Suffix for output filenames (e.g., _window_30d)")
     parser.add_argument("--seed",        type=int,   default=None,
@@ -338,8 +340,12 @@ def main():
 
     # Class weight for imbalance
     pos_rate = train_task["boolean_value"].mean()
-    pos_weight = torch.tensor([(1 - pos_rate) / pos_rate], dtype=torch.float, device=device)
-    log.info(f"  pos_weight: {pos_weight.item():.1f}x")
+    if args.unweighted:
+        pos_weight = torch.tensor([1.0], dtype=torch.float, device=device)
+        log.info(f"  pos_weight: 1.0 (unweighted BCE)")
+    else:
+        pos_weight = torch.tensor([(1 - pos_rate) / pos_rate], dtype=torch.float, device=device)
+        log.info(f"  pos_weight: {pos_weight.item():.1f}x")
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                               collate_fn=collate_fn, num_workers=4, pin_memory=True)
