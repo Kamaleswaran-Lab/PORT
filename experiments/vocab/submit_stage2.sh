@@ -22,8 +22,8 @@ set -e
 SEED=${1:?Usage: $0 BEST_SEED}
 echo "Stage 2 launch with BEST_SEED=${SEED}"
 
-# Resolved paths (sed-substituted from /path/to/* placeholders)
-DATA=/work/jkim1/data/CHD_MEDS
+# Resolved paths — data canonical location is /data/klabFiles/CHD (since 2026-05-15)
+DATA=/data/klabFiles/CHD/CHD_MEDS
 CODE=/hpc/home/jkim1/workspace/CHDLLM
 CONDA=/hpc/home/jkim1/miniforge3
 MODEL_FP=$DATA/tokenized_v4/models/chd_v4_layer6_do0.3/best_model.pt
