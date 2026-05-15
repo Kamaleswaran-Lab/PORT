@@ -44,9 +44,7 @@ def load(model, tag):
             fp = R / f"ethos_finetune_lora_test_predictions_v4_lora_r8_bce_frac{tag}_s456.parquet"
     else:
         if tag == 100:
-            fp = R / "lstm_unweighted_test_predictions.parquet"
-            if not fp.exists():
-                fp = Path("/path/to/CHD_MEDS/results/baselines_tuned/lstm_tuned_test_predictions.parquet")
+            fp = Path("/path/to/CHD_MEDS/results/baselines_tuned/lstm_unweighted_test_predictions.parquet")
         else:
             fp = R / f"lstm_test_predictions_unweighted_frac{tag}_s123.parquet"
     if not fp.exists():

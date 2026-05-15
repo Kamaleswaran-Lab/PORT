@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from sklearn.metrics import roc_auc_score, average_precision_score
 
-PRED_DIR = Path("/path/to/CHD_MEDS/results/evaluation/per_patient_occlusion")
+PRED_DIR = Path("/path/to/CHD_MEDS/results_v4/evaluation/per_patient_occlusion_r8bce_s456")
 FIG_OUT  = Path("paper/overleaf/figures/occlusion_analysis.png")
 
 rcParams.update({
@@ -78,10 +78,9 @@ CATEGORIES = [
 # producing an artifactual hidden-state collapse at position -1 unrelated to
 # surgical-context content. We therefore substitute the SC mask with the
 # OR_ENTRY-excluded variant from experiments/vocab/slurm_orentry_artifact.sh.
-ORENTRY_DIR = Path(str(PRED_DIR).replace("per_patient_occlusion", "orentry_artifact"))
-OVERRIDES = {
-    "Surgical Context (ENCOUNTER)": ORENTRY_DIR / "predictions_sc_minus_or_entry.parquet",
-}
+# SC row in this PRED_DIR already excludes OR_ENTRY (handled in slurm_occlusion_r8bce.sh)
+ORENTRY_DIR = Path(str(PRED_DIR).replace("per_patient_occlusion_r8bce_s456", "orentry_artifact_r8bce_s456"))
+OVERRIDES = {}  # No override needed; SC pred already excludes OR_ENTRY
 
 rows = []
 for cat in CATEGORIES:

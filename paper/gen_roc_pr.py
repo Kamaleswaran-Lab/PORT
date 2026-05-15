@@ -65,7 +65,7 @@ df_d = pd.read_parquet(R_NEW / "test_preds_meds_tuned.parquet")
 models["LR (MEDS)"]    = (df_d.y_true.astype(int).values, df_d.prob_lr_meds.values)
 models["XGB (MEDS)"]   = (df_d.y_true.astype(int).values, df_d.prob_xgb_meds.values)
 models["ASA score"]    = load_pred(R_BASE / "asa_test_predictions.parquet")
-models["BiLSTM"]       = load_pred(R_NEW / "lstm_tuned_test_predictions.parquet")
+models["BiLSTM"]       = load_pred(R_NEW / "lstm_unweighted_test_predictions.parquet")
 models["PORT"]         = load_pred(R_RESULTS / "ethos_finetune_lora_test_predictions_v4_lora_r8_bce_s456.parquet")
 
 # ── Visual encoding ───────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ for seed in [42, 123, 456]:
 print(f"  3-seed PORT AUROC: {[f'{seed_aurocs[s]:.3f}' for s in [42,123,456]]}")
 
 # Bootstrap PORT (s123) vs BiLSTM
-lstm_df = pd.read_parquet(R_NEW / "lstm_tuned_test_predictions.parquet")[["encounter_csn","y_prob"]].rename(columns={"y_prob":"y_lstm"})
+lstm_df = pd.read_parquet(R_NEW / "lstm_unweighted_test_predictions.parquet")[["encounter_csn","y_prob"]].rename(columns={"y_prob":"y_lstm"})
 joint = port_with_csn.merge(lstm_df, on="encounter_csn", how="inner")
 print(f"  Bootstrap intersection: {len(joint):,} encounters, {int(joint.y_true.sum())} IoD+")
 
